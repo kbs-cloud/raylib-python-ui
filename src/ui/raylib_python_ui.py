@@ -293,24 +293,75 @@ class _StringHelper:
 
 class _TableHelper:
     def insert(self, t, *args):
-        if len(args) == 1:
-            t.append(args[0])
-        elif len(args) == 2:
-            t.insert(int(args[0]) - 1, args[1])
+        if isinstance(t, list):
+            if len(args) == 1:
+                t.append(args[0])
+            elif len(args) == 2:
+                t.insert(int(args[0]) - 1, args[1])
+        elif isinstance(t, dict):
+            if len(args) == 1:
+                idx = 1
+                while idx in t:
+                    idx += 1
+                t[idx] = args[0]
+            elif len(args) == 2:
+                pos = int(args[0])
+                idx = 1
+                while idx in t:
+                    idx += 1
+                while idx > pos:
+                    t[idx] = t[idx - 1]
+                    idx -= 1
+                t[pos] = args[1]
     def concat(self, t, sep=""):
+        if isinstance(t, dict):
+            res = []
+            i = 1
+            while i in t:
+                res.append(t[i])
+                i += 1
+            return sep.join(str(x) for x in res)
         return sep.join(str(x) for x in t)
     def remove(self, t, pos=None):
         if not t:
             return None
-        if pos is None:
-            return t.pop()
-        return t.pop(int(pos) - 1)
+        if isinstance(t, list):
+            if pos is None:
+                return t.pop()
+            return t.pop(int(pos) - 1)
+        elif isinstance(t, dict):
+            if pos is None:
+                idx = 1
+                while idx in t:
+                    idx += 1
+                return t.pop(idx - 1, None)
+            val = t.pop(int(pos), None)
+            # shift left
+            idx = int(pos)
+            while idx + 1 in t:
+                t[idx] = t[idx + 1]
+                idx += 1
+            t.pop(idx, None)
+            return val
     def sort(self, t, comp=None):
-        if comp:
-            from functools import cmp_to_key
-            t.sort(key=cmp_to_key(comp))
-        else:
-            t.sort()
+        if isinstance(t, list):
+            if comp:
+                from functools import cmp_to_key
+                t.sort(key=cmp_to_key(comp))
+            else:
+                t.sort()
+        elif isinstance(t, dict):
+            # Sort the values and re-key them 1..N
+            keys = sorted(t.keys())
+            vals = [t[k] for k in keys]
+            if comp:
+                from functools import cmp_to_key
+                vals.sort(key=cmp_to_key(comp))
+            else:
+                vals.sort()
+            t.clear()
+            for i, v in enumerate(vals, 1):
+                t[i] = v
 
 def _ipairs(t):
     if t is None:
