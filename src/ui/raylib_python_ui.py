@@ -1,5 +1,6 @@
 import _raylib_python_ui
 import builtins
+import types
 
 _frames_cache = {}
 _frame_scripts = {}  # fid -> {script_name: handler}
@@ -9,6 +10,18 @@ class Frame:
     def __init__(self, fid):
         self.id = fid
 
+    def __getattribute__(self, name):
+        try:
+            attr = object.__getattribute__(self, name)
+            if isinstance(attr, types.FunctionType):
+                return types.MethodType(attr, self)
+            return attr
+        except AttributeError:
+            return None
+
+    def __getattr__(self, name):
+        return None
+
     def GetName(self):
         return _raylib_python_ui.GetName(self.id)
 
@@ -17,6 +30,12 @@ class Frame:
 
     def Show(self):
         _raylib_python_ui.Show(self.id)
+
+    def SetShown(self, show):
+        if show:
+            self.Show()
+        else:
+            self.Hide()
 
     def IsVisible(self):
         return _raylib_python_ui.IsVisible(self.id)
@@ -29,6 +48,9 @@ class Frame:
 
     def GetHeight(self):
         return _raylib_python_ui.GetHeight(self.id)
+
+    def GetRect(self):
+        return _raylib_python_ui.GetRect(self.id)
 
     def SetPoint(self, point, relativeTo, relativePoint, xOfs=0.0, yOfs=0.0):
         rel_id = -1
@@ -45,8 +67,8 @@ class Frame:
     def SetBackdropColor(self, r, g, b, a):
         _raylib_python_ui.SetBackdropColor(self.id, float(r), float(g), float(b), float(a))
 
-    def SetBackdropBorderColor(self, r, g, b):
-        _raylib_python_ui.SetBackdropBorderColor(self.id, float(r), float(g), float(b))
+    def SetBackdropBorderColor(self, r, g, b, a=1.0):
+        _raylib_python_ui.SetBackdropBorderColor(self.id, float(r), float(g), float(b), float(a))
 
     def SetBackdropBorderWidth(self, w):
         _raylib_python_ui.SetBackdropBorderWidth(self.id, float(w))
@@ -72,10 +94,22 @@ class Frame:
     def SetText(self, text):
         _raylib_python_ui.SetText(self.id, str(text) if text is not None else "")
 
+    def SetWidth(self, w):
+        self.SetSize(float(w), self.GetHeight())
+
+    def SetHeight(self, h):
+        self.SetSize(self.GetWidth(), float(h))
+
+    def SetFont(self, size):
+        _raylib_python_ui.SetFont(self.id, float(size))
+
+    def SetAllPoints(self, relativeTo=None):
+        _raylib_python_ui.SetAllPoints(self.id, relativeTo)
+
     def GetText(self):
         return _raylib_python_ui.GetText(self.id)
 
-    def SetTextColor(self, r, g, b):
+    def SetTextColor(self, r, g, b, a=1.0):
         _raylib_python_ui.SetTextColor(self.id, float(r), float(g), float(b))
 
     def SetJustifyH(self, justify):
@@ -87,11 +121,17 @@ class Frame:
     def SetValue(self, val):
         _raylib_python_ui.SetValue(self.id, float(val))
 
-    def SetStatusBarColor(self, r, g, b):
+    def SetStatusBarColor(self, r, g, b, a=1.0):
         _raylib_python_ui.SetStatusBarColor(self.id, float(r), float(g), float(b))
 
     def SetHighlightColor(self, r, g, b, a):
         _raylib_python_ui.SetHighlightColor(self.id, float(r), float(g), float(b), float(a))
+
+    def SetResizable(self, resizable):
+        _raylib_python_ui.SetResizable(self.id, bool(resizable))
+
+    def IsResizable(self):
+        return _raylib_python_ui.IsResizable(self.id)
 
     def SetScript(self, script_name, handler):
         if handler:
@@ -109,6 +149,21 @@ class Frame:
     def SetFrameStrata(self, strata):
         # Stubs for compatibility
         pass
+
+    def IsShown(self):
+        return self.IsVisible()
+
+    def RegisterForDrag(self, *buttons):
+        # Pass up to two buttons to the C API
+        btn1 = buttons[0] if len(buttons) > 0 else None
+        btn2 = buttons[1] if len(buttons) > 1 else None
+        _raylib_python_ui.RegisterForDrag(self.id, btn1, btn2)
+
+    def SetPreEscaped(self, val):
+        _raylib_python_ui.SetPreEscaped(self.id, val)
+
+    def IsPreEscaped(self):
+        return _raylib_python_ui.IsPreEscaped(self.id)
 
 def get_frame_by_id(fid):
     if fid == 0:
@@ -146,6 +201,21 @@ def CreateFrame(type_str, name=None, parent=None, template=None):
     return frame
 
 # Callback dispatchers
+def _safe_call(handler, *args):
+    func = handler
+    if hasattr(handler, "__func__"):
+        func = handler.__func__
+    if hasattr(func, "__code__"):
+        co_argcount = func.__code__.co_argcount
+        if hasattr(handler, "__self__"):
+            limit = co_argcount - 1
+        else:
+            limit = co_argcount
+        if func.__code__.co_flags & 0x04:
+            return handler(*args)
+        return handler(*args[:limit])
+    return handler(*args)
+
 def _dispatch_event(event_name, *args):
     fids = _event_handlers.get(event_name, [])
     for fid in list(fids):
@@ -153,7 +223,7 @@ def _dispatch_event(event_name, *args):
         handlers = _frame_scripts.get(fid, {})
         if "OnEvent" in handlers:
             try:
-                handlers["OnEvent"](frame, event_name, *args)
+                _safe_call(handlers["OnEvent"], frame, event_name, *args)
             except Exception as e:
                 import traceback
                 print(f"Error in OnEvent for frame {fid}: {e}")
@@ -163,7 +233,7 @@ def _dispatch_on_update(fid, elapsed):
     handlers = _frame_scripts.get(fid, {})
     if "OnUpdate" in handlers:
         try:
-            handlers["OnUpdate"](get_frame_by_id(fid), elapsed)
+            _safe_call(handlers["OnUpdate"], get_frame_by_id(fid), elapsed)
         except Exception as e:
             import traceback
             print(f"Error in OnUpdate for frame {fid}: {e}")
@@ -173,7 +243,7 @@ def _dispatch_on_draw(fid):
     handlers = _frame_scripts.get(fid, {})
     if "OnDraw" in handlers:
         try:
-            handlers["OnDraw"](get_frame_by_id(fid))
+            _safe_call(handlers["OnDraw"], get_frame_by_id(fid))
         except Exception as e:
             import traceback
             print(f"Error in OnDraw for frame {fid}: {e}")
@@ -183,7 +253,7 @@ def _dispatch_on_click(fid, button):
     handlers = _frame_scripts.get(fid, {})
     if "OnClick" in handlers:
         try:
-            handlers["OnClick"](get_frame_by_id(fid), button)
+            _safe_call(handlers["OnClick"], get_frame_by_id(fid), button)
         except Exception as e:
             import traceback
             print(f"Error in OnClick for frame {fid}: {e}")
@@ -193,7 +263,7 @@ def _dispatch_on_drag_start(fid, button):
     handlers = _frame_scripts.get(fid, {})
     if "OnDragStart" in handlers:
         try:
-            handlers["OnDragStart"](get_frame_by_id(fid), button)
+            _safe_call(handlers["OnDragStart"], get_frame_by_id(fid), button)
         except Exception as e:
             import traceback
             print(f"Error in OnDragStart for frame {fid}: {e}")
@@ -204,7 +274,7 @@ def _dispatch_on_drag_stop(fid, drag_type, drag_data, dest_fid):
     if "OnDragStop" in handlers:
         dest_frame = get_frame_by_id(dest_fid) if dest_fid >= 0 else None
         try:
-            handlers["OnDragStop"](get_frame_by_id(fid), drag_type, drag_data, dest_frame)
+            _safe_call(handlers["OnDragStop"], get_frame_by_id(fid), drag_type, drag_data, dest_frame)
         except Exception as e:
             import traceback
             print(f"Error in OnDragStop for frame {fid}: {e}")
@@ -215,7 +285,7 @@ def _dispatch_on_receive_drag(fid, drag_type, drag_data, src_fid):
     if "OnReceiveDrag" in handlers:
         src_frame = get_frame_by_id(src_fid) if src_fid >= 0 else None
         try:
-            handlers["OnReceiveDrag"](get_frame_by_id(fid), drag_type, drag_data, src_frame)
+            _safe_call(handlers["OnReceiveDrag"], get_frame_by_id(fid), drag_type, drag_data, src_frame)
         except Exception as e:
             import traceback
             print(f"Error in OnReceiveDrag for frame {fid}: {e}")
@@ -225,7 +295,7 @@ def _dispatch_on_enter(fid):
     handlers = _frame_scripts.get(fid, {})
     if "OnEnter" in handlers:
         try:
-            handlers["OnEnter"](get_frame_by_id(fid))
+            _safe_call(handlers["OnEnter"], get_frame_by_id(fid))
         except Exception as e:
             import traceback
             print(f"Error in OnEnter for frame {fid}: {e}")
@@ -235,7 +305,7 @@ def _dispatch_on_leave(fid):
     handlers = _frame_scripts.get(fid, {})
     if "OnLeave" in handlers:
         try:
-            handlers["OnLeave"](get_frame_by_id(fid))
+            _safe_call(handlers["OnLeave"], get_frame_by_id(fid))
         except Exception as e:
             import traceback
             print(f"Error in OnLeave for frame {fid}: {e}")
@@ -249,6 +319,10 @@ import math as _math
 import random as _random
 
 class _StringHelper:
+    def len(self, s):
+        if s is None:
+            return 0
+        return len(s)
     def format(self, fmt, *args):
         if not args:
             return fmt
@@ -295,8 +369,28 @@ class _StringHelper:
         return s.lower() if s else ""
     def upper(self, s):
         return s.upper() if s else ""
-    def len(self, s):
-        return len(s) if s else 0
+    def sub(self, s, i, j=None):
+        if not s:
+            return ""
+        i = int(i)
+        if i > 0:
+            start = i - 1
+        elif i < 0:
+            start = len(s) + i
+        else:
+            start = 0
+            
+        if j is None:
+            return s[start:]
+        else:
+            j = int(j)
+            if j > 0:
+                end = j
+            elif j < 0:
+                end = len(s) + j + 1
+            else:
+                end = 0
+            return s[start:end]
 
 class _TableHelper:
     def insert(self, t, *args):
@@ -445,6 +539,26 @@ class _JsonHelper:
         py_pattern = pattern.replace('%d', '\\d').replace('%s', '\\s').replace('%w', '\\w')
         return _re.findall(py_pattern, s)
 
+class Table(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        if args:
+            if isinstance(args[0], (list, tuple, set)):
+                for i, val in enumerate(args[0], 1):
+                    self[i] = val
+            elif isinstance(args[0], dict):
+                self.update(args[0])
+            else:
+                self.update(args[0])
+        self.update(kwargs)
+
+    def __getitem__(self, key):
+        return self.get(key, None)
+    def __getattr__(self, key):
+        return self.get(key, None)
+    def __setattr__(self, key, value):
+        self[key] = value
+
 builtins.string = _StringHelper()
 builtins.table = _TableHelper()
 builtins.math = _MathHelper()
@@ -454,4 +568,87 @@ builtins.tostring = str
 builtins.tonumber = _tonumber
 builtins.select = _select
 builtins.json = _JsonHelper()
+builtins.Table = Table
+
+def _unpack(*args):
+    if not args:
+        return ()
+    n = args[-1]
+    vals = args[:-1]
+    if len(vals) == 1:
+        val = vals[0]
+        if isinstance(val, (list, tuple)):
+            res = list(val[:n])
+            while len(res) < n:
+                res.append(None)
+            return tuple(res)
+        elif isinstance(val, dict):
+            res = []
+            for i in range(1, n + 1):
+                res.append(val.get(i, None))
+            return tuple(res)
+        res = [val]
+        while len(res) < n:
+            res.append(None)
+        return tuple(res)
+    else:
+        res = list(vals[:n])
+        while len(res) < n:
+            res.append(None)
+        return tuple(res)
+
+builtins._unpack = _unpack
+
+# Shared game state globals
+builtins.INVENTORY_SLOTS = 24
+builtins.GLIMMERWOOD_BAG_OPEN = False
+builtins.GLIMMERWOOD_HELD_ITEM = None
+builtins.GLIMMERWOOD_HOVERED_INV_SLOT = 0
+builtins.earlyLogBuffer = {}
+builtins.GLIMMERWOOD_AB_PROFILES = {}
+
+# Intercept and wrap glimmerwood C-extension dict return values
+import sys
+if "glimmerwood" in sys.modules:
+    import functools
+    
+    def wrap_to_table(val):
+        if isinstance(val, dict):
+            if type(val) is Table:
+                return val
+            t = Table()
+            for k, v in val.items():
+                t[k] = wrap_to_table(v)
+            return t
+        elif isinstance(val, list):
+            return [wrap_to_table(x) for x in val]
+        elif isinstance(val, tuple):
+            return tuple(wrap_to_table(x) for x in val)
+        return val
+
+    def wrap_function(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            return wrap_to_table(func(*args, **kwargs))
+        return wrapper
+
+    glimmerwood = sys.modules["glimmerwood"]
+    for name in dir(glimmerwood):
+        if name.startswith("_"):
+            continue
+        obj = getattr(glimmerwood, name)
+        for attr_name in dir(obj):
+            if attr_name.startswith("_"):
+                continue
+            try:
+                attr = getattr(obj, attr_name)
+                if callable(attr):
+                    setattr(obj, attr_name, wrap_function(attr))
+            except Exception:
+                pass
+        if callable(obj):
+            try:
+                setattr(glimmerwood, name, wrap_function(obj))
+            except Exception:
+                pass
 

@@ -99,6 +99,18 @@ static PyObject* py_GetHeight(PyObject* self, PyObject* args) {
     return PyFloat_FromDouble(f && !f->destroyed ? f->h : 0.0);
 }
 
+extern float g_ui_scale;
+
+static PyObject* py_GetRect(PyObject* self, PyObject* args) {
+    int fid;
+    if (!PyArg_ParseTuple(args, "i", &fid)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        return Py_BuildValue("dddd", (double)(f->cx / g_ui_scale), (double)(f->cy / g_ui_scale), (double)f->w, (double)f->h);
+    }
+    return Py_BuildValue("dddd", 0.0, 0.0, 0.0, 0.0);
+}
+
 static PyObject* py_SetPoint(PyObject* self, PyObject* args) {
     int fid, rel_fid;
     const char *point, *rel_point;
@@ -145,8 +157,8 @@ static PyObject* py_SetBackdropColor(PyObject* self, PyObject* args) {
 
 static PyObject* py_SetBackdropBorderColor(PyObject* self, PyObject* args) {
     int fid;
-    double r, g, b;
-    if (!PyArg_ParseTuple(args, "iddd", &fid, &r, &g, &b)) return NULL;
+    double r, g, b, a = 1.0;
+    if (!PyArg_ParseTuple(args, "iddd|d", &fid, &r, &g, &b, &a)) return NULL;
     LFrame *f = lframe_get(g_py_sys->frames, fid);
     if (f && !f->destroyed) {
         f->has_border = true;
@@ -312,6 +324,145 @@ static PyObject* py_RegisterEvent(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+static PyObject* py_SetFont(PyObject* self, PyObject* args) {
+    int fid;
+    double size;
+    if (!PyArg_ParseTuple(args, "id", &fid, &size)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        int sz = (int)size;
+        if (f->font_size != sz) {
+            f->font_size = sz;
+            f->layout_dirty = true;
+        }
+        if (f->type == LFT_FONTSTRING && f->h <= 0.0f) {
+            f->h = (float)sz;
+        }
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* py_SetAllPoints(PyObject* self, PyObject* args) {
+    int fid;
+    PyObject* rel_obj = NULL;
+    if (!PyArg_ParseTuple(args, "i|O", &fid, &rel_obj)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        int rel_id = -1;
+        char rel_name[LF_NAME_LEN] = "";
+        if (rel_obj && rel_obj != Py_None) {
+            if (PyLong_Check(rel_obj)) {
+                rel_id = (int)PyLong_AsLong(rel_obj);
+            } else {
+                PyObject* id_attr = PyObject_GetAttrString(rel_obj, "id");
+                if (id_attr) {
+                    rel_id = (int)PyLong_AsLong(id_attr);
+                    Py_DECREF(id_attr);
+                }
+            }
+            LFrame *rel_f = lframe_get(g_py_sys->frames, rel_id);
+            if (rel_f) {
+                strncpy(rel_name, rel_f->name, LF_NAME_LEN - 1);
+            }
+        }
+        if (rel_name[0] == '\0') {
+            if (f->parent_id >= 0) {
+                LFrame *par = lframe_get(g_py_sys->frames, f->parent_id);
+                if (par && par->name[0]) {
+                    strncpy(rel_name, par->name, LF_NAME_LEN - 1);
+                }
+            }
+            if (rel_name[0] == '\0') {
+                strcpy(rel_name, "UIParent");
+            }
+        }
+        f->has_default_anchor = true;
+        strncpy(f->default_anchor.point, "TOPLEFT", LF_POINT_LEN - 1);
+        f->default_anchor.rel_id = rel_id;
+        strncpy(f->default_anchor.rel_point, "TOPLEFT", LF_POINT_LEN - 1);
+        strncpy(f->default_anchor.rel_name, rel_name, LF_NAME_LEN - 1);
+        f->default_anchor.ox = 0.0f;
+        f->default_anchor.oy = 0.0f;
+
+        if (!f->user_placed) {
+            f->has_anchor = true;
+            strncpy(f->anchor.point,     "TOPLEFT",  LF_POINT_LEN - 1);
+            f->anchor.rel_id = rel_id;
+            strncpy(f->anchor.rel_point, "TOPLEFT",  LF_POINT_LEN - 1);
+            strncpy(f->anchor.rel_name,  rel_name,   LF_NAME_LEN - 1);
+            f->anchor.ox  = 0.0f;
+            f->anchor.oy  = 0.0f;
+            f->anchored_ok = false;
+        }
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* py_SetResizable(PyObject* self, PyObject* args) {
+    int fid;
+    PyObject *val;
+    if (!PyArg_ParseTuple(args, "iO", &fid, &val)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        f->resizable = PyObject_IsTrue(val) ? true : false;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* py_IsResizable(PyObject* self, PyObject* args) {
+    int fid;
+    if (!PyArg_ParseTuple(args, "i", &fid)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        return PyBool_FromLong(f->resizable);
+    }
+    return PyBool_FromLong(0);
+}
+
+static PyObject* py_RegisterForDrag(PyObject* self, PyObject* args) {
+    int fid;
+    PyObject *btn1 = NULL, *btn2 = NULL;
+    if (!PyArg_ParseTuple(args, "i|OO", &fid, &btn1, &btn2)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        f->register_drag_left = false;
+        f->register_drag_right = false;
+        PyObject *btns[2] = {btn1, btn2};
+        for (int i = 0; i < 2; i++) {
+            if (btns[i] && PyUnicode_Check(btns[i])) {
+                const char *btn = PyUnicode_AsUTF8(btns[i]);
+                if (strcmp(btn, "LeftButton") == 0 || strcmp(btn, "Left") == 0) {
+                    f->register_drag_left = true;
+                } else if (strcmp(btn, "RightButton") == 0 || strcmp(btn, "Right") == 0) {
+                    f->register_drag_right = true;
+                }
+            }
+        }
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* py_SetPreEscaped(PyObject* self, PyObject* args) {
+    int fid;
+    PyObject *val;
+    if (!PyArg_ParseTuple(args, "iO", &fid, &val)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        f->pre_escaped = PyObject_IsTrue(val) ? true : false;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* py_IsPreEscaped(PyObject* self, PyObject* args) {
+    int fid;
+    if (!PyArg_ParseTuple(args, "i", &fid)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        return PyBool_FromLong(f->pre_escaped);
+    }
+    return PyBool_FromLong(0);
+}
+
 static PyMethodDef RaylibPythonUiMethods[] = {
     {"CreateFrame", py_CreateFrame, METH_VARARGS, "Create a UI frame"},
     {"GetName", py_GetName, METH_VARARGS, "Get name of frame"},
@@ -321,6 +472,7 @@ static PyMethodDef RaylibPythonUiMethods[] = {
     {"SetSize", py_SetSize, METH_VARARGS, "Set frame size"},
     {"GetWidth", py_GetWidth, METH_VARARGS, "Get frame width"},
     {"GetHeight", py_GetHeight, METH_VARARGS, "Get frame height"},
+    {"GetRect", py_GetRect, METH_VARARGS, "Get frame rect (x, y, w, h)"},
     {"SetPoint", py_SetPoint, METH_VARARGS, "Set frame anchor point"},
     {"ClearAllPoints", py_ClearAllPoints, METH_VARARGS, "Clear all points"},
     {"SetBackdropColor", py_SetBackdropColor, METH_VARARGS, "Set backdrop color"},
@@ -338,6 +490,13 @@ static PyMethodDef RaylibPythonUiMethods[] = {
     {"SetHighlightColor", py_SetHighlightColor, METH_VARARGS, "Set button highlight color"},
     {"SetScript", py_SetScript, METH_VARARGS, "Set whether a script callback exists"},
     {"RegisterEvent", py_RegisterEvent, METH_VARARGS, "Register an event"},
+    {"SetFont", py_SetFont, METH_VARARGS, "Set FontString font size"},
+    {"SetAllPoints", py_SetAllPoints, METH_VARARGS, "Set all points to relative frame"},
+    {"SetResizable", py_SetResizable, METH_VARARGS, "Set if frame is resizable"},
+    {"IsResizable", py_IsResizable, METH_VARARGS, "Get if frame is resizable"},
+    {"RegisterForDrag", py_RegisterForDrag, METH_VARARGS, "Register mouse buttons for dragging"},
+    {"SetPreEscaped", py_SetPreEscaped, METH_VARARGS, "Set whether input strings are pre-escaped"},
+    {"IsPreEscaped", py_IsPreEscaped, METH_VARARGS, "Check if input strings are pre-escaped"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -500,6 +659,53 @@ bool python_system_is_active(const PythonSystem *sys) {
     return sys && sys->active;
 }
 
+static int run_python_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return -1;
+    }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char *buffer = (char *)malloc(size + 1);
+    if (!buffer) {
+        fclose(f);
+        return -1;
+    }
+    size_t read_bytes = fread(buffer, 1, size, f);
+    buffer[read_bytes] = '\0';
+    fclose(f);
+
+    PyObject *co = Py_CompileString(buffer, path, Py_file_input);
+    free(buffer);
+
+    if (!co) {
+        PyErr_Print();
+        return -1;
+    }
+
+    PyObject *m = PyImport_AddModule("__main__");
+    if (!m) {
+        Py_DECREF(co);
+        return -1;
+    }
+    PyObject *d = PyModule_GetDict(m);
+    if (!d) {
+        Py_DECREF(co);
+        return -1;
+    }
+    PyObject *v = PyEval_EvalCode(co, d, d);
+    Py_DECREF(co);
+
+    if (!v) {
+        PyErr_Print();
+        return -1;
+    }
+    Py_DECREF(v);
+    return 0;
+}
+
 bool python_system_load_addons(PythonSystem *sys, void *userdata, const char *addons_dir) {
     if (!sys || !addons_dir) return false;
     sys->userdata = userdata;
@@ -587,12 +793,8 @@ bool python_system_load_addons(PythonSystem *sys, void *userdata, const char *ad
             snprintf(py_path, sizeof(py_path), "%s/%s/%s",
                      addons_dir, addon_names[ai], py_file);
 
-            FILE *pf = fopen(py_path, "r");
-            if (pf) {
-                PyRun_SimpleFile(pf, py_path);
-                fclose(pf);
-            } else {
-                TraceLog(LOG_WARNING, "Could not open python script: %s", py_path);
+            if (run_python_file(py_path) != 0) {
+                TraceLog(LOG_WARNING, "Could not load/run python script: %s", py_path);
             }
         }
         fclose(f);
