@@ -240,3 +240,153 @@ def _dispatch_on_leave(fid):
             import traceback
             print(f"Error in OnLeave for frame {fid}: {e}")
             traceback.print_exc()
+
+
+# =========================================================================
+# Lua Compatibility Helpers for Python
+# =========================================================================
+import math as _math
+import random as _random
+
+class _StringHelper:
+    def format(self, fmt, *args):
+        if not args:
+            return fmt
+        if len(args) == 1 and isinstance(args[0], (list, tuple)):
+            return fmt % tuple(args[0])
+        return fmt % args
+    def sub(self, s, start, end=None):
+        if s is None:
+            return ""
+        start = int(start)
+        if start > 0:
+            start_idx = start - 1
+        elif start < 0:
+            start_idx = len(s) + start
+        else:
+            start_idx = 0
+            
+        if end is None:
+            return s[start_idx:]
+        
+        end = int(end)
+        if end > 0:
+            end_idx = end
+        elif end < 0:
+            end_idx = len(s) + end + 1
+        else:
+            end_idx = 0
+        return s[start_idx:end_idx]
+    def find(self, s, pattern, init=1, plain=False):
+        if s is None or pattern is None:
+            return None
+        idx = s.find(pattern, init - 1)
+        if idx == -1:
+            return None
+        return idx + 1, idx + len(pattern)
+    def lower(self, s):
+        return s.lower() if s else ""
+    def upper(self, s):
+        return s.upper() if s else ""
+    def len(self, s):
+        return len(s) if s else 0
+
+class _TableHelper:
+    def insert(self, t, *args):
+        if len(args) == 1:
+            t.append(args[0])
+        elif len(args) == 2:
+            t.insert(int(args[0]) - 1, args[1])
+    def concat(self, t, sep=""):
+        return sep.join(str(x) for x in t)
+    def remove(self, t, pos=None):
+        if not t:
+            return None
+        if pos is None:
+            return t.pop()
+        return t.pop(int(pos) - 1)
+    def sort(self, t, comp=None):
+        if comp:
+            from functools import cmp_to_key
+            t.sort(key=cmp_to_key(comp))
+        else:
+            t.sort()
+
+def _ipairs(t):
+    if t is None:
+        return []
+    if isinstance(t, dict):
+        res = []
+        i = 1
+        while i in t:
+            res.append((i, t[i]))
+            i += 1
+        return res
+    if isinstance(t, (list, tuple)):
+        return list(enumerate(t, 1))
+    return []
+
+def _pairs(t):
+    if t is None:
+        return []
+    if isinstance(t, dict):
+        return list(t.items())
+    if isinstance(t, (list, tuple)):
+        return list(enumerate(t, 1))
+    return []
+
+def _tonumber(x):
+    try:
+        s = str(x)
+        if '.' in s:
+            return float(s)
+        return int(s)
+    except:
+        return None
+
+def _select(index, *args):
+    if index == '#':
+        return len(args)
+    idx = int(index)
+    if idx > 0:
+        return args[idx-1:]
+    return ()
+
+class _MathHelper:
+    def floor(self, x):
+        return _math.floor(x)
+    def ceil(self, x):
+        return _math.ceil(x)
+    def abs(self, x):
+        return abs(x)
+    def sqrt(self, x):
+        return _math.sqrt(x)
+    def sin(self, x):
+        return _math.sin(x)
+    def cos(self, x):
+        return _math.cos(x)
+    def atan2(self, y, x):
+        return _math.atan2(y, x)
+    def random(self, *args):
+        if not args:
+            return _random.random()
+        if len(args) == 1:
+            return _random.randint(1, int(args[0]))
+        return _random.randint(int(args[0]), int(args[1]))
+    def max(self, *args):
+        return max(*args)
+    def min(self, *args):
+        return min(*args)
+    @property
+    def pi(self):
+        return _math.pi
+
+builtins.string = _StringHelper()
+builtins.table = _TableHelper()
+builtins.math = _MathHelper()
+builtins.ipairs = _ipairs
+builtins.pairs = _pairs
+builtins.tostring = str
+builtins.tonumber = _tonumber
+builtins.select = _select
+
