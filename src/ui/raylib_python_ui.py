@@ -284,6 +284,13 @@ class _StringHelper:
         if idx == -1:
             return None
         return idx + 1, idx + len(pattern)
+    def gmatch(self, s, pattern):
+        import re as _re
+        py_pattern = pattern.replace('%d', '\\d').replace('%s', '\\s').replace('%w', '\\w')
+        # Find all matches
+        matches = _re.findall(py_pattern, s)
+        # Lua gmatch returns an iterator, but returning a list is perfectly fine for python for-in loops!
+        return matches
     def lower(self, s):
         return s.lower() if s else ""
     def upper(self, s):
@@ -432,6 +439,12 @@ class _MathHelper:
     def pi(self):
         return _math.pi
 
+class _JsonHelper:
+    def gmatch(self, s, pattern):
+        import re as _re
+        py_pattern = pattern.replace('%d', '\\d').replace('%s', '\\s').replace('%w', '\\w')
+        return _re.findall(py_pattern, s)
+
 builtins.string = _StringHelper()
 builtins.table = _TableHelper()
 builtins.math = _MathHelper()
@@ -440,4 +453,5 @@ builtins.pairs = _pairs
 builtins.tostring = str
 builtins.tonumber = _tonumber
 builtins.select = _select
+builtins.json = _JsonHelper()
 
