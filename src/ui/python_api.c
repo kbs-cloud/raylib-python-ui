@@ -188,6 +188,25 @@ static PyObject* py_SetMovable(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+static PyObject* py_SetFrameStrata(PyObject* self, PyObject* args) {
+    int fid;
+    const char *strata_str;
+    if (!PyArg_ParseTuple(args, "is", &fid, &strata_str)) return NULL;
+    LFrame *f = lframe_get(g_py_sys->frames, fid);
+    if (f && !f->destroyed) {
+        LFStrata strata = LFS_MEDIUM;
+        if (strcmp(strata_str, "BACKGROUND") == 0) strata = LFS_BACKGROUND;
+        else if (strcmp(strata_str, "LOW") == 0) strata = LFS_LOW;
+        else if (strcmp(strata_str, "MEDIUM") == 0) strata = LFS_MEDIUM;
+        else if (strcmp(strata_str, "HIGH") == 0) strata = LFS_HIGH;
+        else if (strcmp(strata_str, "DIALOG") == 0) strata = LFS_DIALOG;
+        else if (strcmp(strata_str, "FULLSCREEN") == 0) strata = LFS_FULLSCREEN;
+        else if (strcmp(strata_str, "TOOLTIP") == 0) strata = LFS_TOOLTIP;
+        f->strata = strata;
+    }
+    Py_RETURN_NONE;
+}
+
 static PyObject* py_EnableMouse(PyObject* self, PyObject* args) {
     int fid;
     int enable;
@@ -479,6 +498,7 @@ static PyMethodDef RaylibPythonUiMethods[] = {
     {"SetBackdropBorderColor", py_SetBackdropBorderColor, METH_VARARGS, "Set backdrop border color"},
     {"SetBackdropBorderWidth", py_SetBackdropBorderWidth, METH_VARARGS, "Set backdrop border width"},
     {"SetMovable", py_SetMovable, METH_VARARGS, "Set if frame is movable"},
+    {"SetFrameStrata", py_SetFrameStrata, METH_VARARGS, "Set frame strata"},
     {"EnableMouse", py_EnableMouse, METH_VARARGS, "Enable or disable mouse input on frame"},
     {"SetText", py_SetText, METH_VARARGS, "Set frame text"},
     {"GetText", py_GetText, METH_VARARGS, "Get frame text"},

@@ -1,0 +1,6 @@
+feat(ui): implement strata C-binding and _G class mapping
+
+- Implement py_SetFrameStrata C-binding and register in RaylibPythonUiMethods.
+- Map Frame.SetFrameStrata Python wrapper to the C binding.
+- Define _G_Class built-in helper to safely resolve frame variables without raising KeyError.
+- Enhance string.gmatch pattern translator to convert Lua classes and escape regex characters.

@@ -147,8 +147,7 @@ class Frame:
         _event_handlers.setdefault(event_name, set()).add(self.id)
 
     def SetFrameStrata(self, strata):
-        # Stubs for compatibility
-        pass
+        _raylib_python_ui.SetFrameStrata(self.id, strata)
 
     def IsShown(self):
         return self.IsVisible()
@@ -360,10 +359,51 @@ class _StringHelper:
         return idx + 1, idx + len(pattern)
     def gmatch(self, s, pattern):
         import re as _re
-        py_pattern = pattern.replace('%d', '\\d').replace('%s', '\\s').replace('%w', '\\w')
-        # Find all matches
+        classes = {
+            'a': '[a-zA-Z]',
+            'c': '[\\x00-\\x1f\\x7f]',
+            'd': '\\d',
+            'l': '[a-z]',
+            'p': '[!-/:-@\\[-`{-~]',
+            's': '\\s',
+            'u': '[A-Z]',
+            'w': '\\w',
+            'x': '[0-9a-fA-F]',
+            'z': '\\x00'
+        }
+        res = []
+        i = 0
+        while i < len(pattern):
+            c = pattern[i]
+            if c == '%':
+                if i + 1 < len(pattern):
+                    nc = pattern[i+1]
+                    nl = nc.lower()
+                    if nl in classes:
+                        repl = classes[nl]
+                        if nc.isupper():
+                            if repl.startswith('[') and not repl.startswith('[^'):
+                                repl = '[^' + repl[1:]
+                            elif repl.startswith('\\'):
+                                repl = '[^' + repl + ']'
+                        res.append(repl)
+                    else:
+                        if nc in '.^$*+?()[]{}|\\-':
+                            res.append('\\' + nc)
+                        else:
+                            res.append(nc)
+                    i += 2
+                else:
+                    res.append('%')
+                    i += 1
+            elif c in '{}|\\':
+                res.append('\\' + c)
+                i += 1
+            else:
+                res.append(c)
+                i += 1
+        py_pattern = "".join(res)
         matches = _re.findall(py_pattern, s)
-        # Lua gmatch returns an iterator, but returning a list is perfectly fine for python for-in loops!
         return matches
     def lower(self, s):
         return s.lower() if s else ""
@@ -559,11 +599,20 @@ class Table(dict):
     def __setattr__(self, key, value):
         self[key] = value
 
+class _G_Class:
+    def __getitem__(self, key):
+        return getattr(builtins, key, None)
+    def __setitem__(self, key, value):
+        setattr(builtins, key, value)
+    def get(self, key, default=None):
+        return getattr(builtins, key, default)
+
 builtins.string = _StringHelper()
 builtins.table = _TableHelper()
 builtins.math = _MathHelper()
 builtins.ipairs = _ipairs
 builtins.pairs = _pairs
+builtins._G = _G_Class()
 builtins.tostring = str
 builtins.tonumber = _tonumber
 builtins.select = _select
