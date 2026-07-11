@@ -6,6 +6,7 @@
 
 typedef struct PythonSystem PythonSystem;
 
+void          python_system_register_inittab(const char *name, void *initfunc);
 PythonSystem *python_system_create(void);
 void          python_system_destroy(PythonSystem *sys);
 

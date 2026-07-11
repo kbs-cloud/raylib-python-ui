@@ -447,6 +447,12 @@ static LFrameInputCallbacks g_input_cbs = {
  * PythonSystem API implementations
  * ====================================================================== */
 
+void python_system_register_inittab(const char *name, void *initfunc) {
+    if (!Py_IsInitialized()) {
+        PyImport_AppendInittab(name, (PyObject* (*)(void))initfunc);
+    }
+}
+
 PythonSystem *python_system_create(void) {
     PythonSystem *sys = RL_CALLOC(1, sizeof(PythonSystem));
     sys->frames = lframe_system_create();
