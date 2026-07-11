@@ -1317,6 +1317,12 @@ void lframe_draw(LFrameSystem *s, void (*on_draw_cb)(int fid, void *userdata), v
                     if (layout->line_count > 0) {
                         int spacing = (int)(2 * g_ui_scale); // pixel spacing between lines
                         int start_y = (int)(y + (h - layout->total_height) / 2.0f);
+                        /* Clamp start_y so text begins at the top of the frame if it
+                           overflows — prevents text from rendering above the frame. */
+                        if (start_y < (int)y) start_y = (int)y;
+                        /* Scissor-clip to the FontString's own bounding box so text
+                           never bleeds outside its declared height/width. */
+                        BeginScissorMode((int)x, (int)y, (int)w, (int)h);
                         for (int i = 0; i < layout->line_count; i++) {
                             LFLineLayout *line = &layout->lines[i];
                             int tw = line->measured_width;
@@ -1344,6 +1350,7 @@ void lframe_draw(LFrameSystem *s, void (*on_draw_cb)(int fid, void *userdata), v
                                 x_offset += MeasureText(run->text, (int)(f->font_size * g_ui_scale));
                             }
                         }
+                        EndScissorMode();
                     }
                 }
                 break;
